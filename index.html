@@ -100,7 +100,7 @@ input,select,textarea{font-family:inherit;font-size:14px;outline:none;}
 .statcard{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;
   display:flex;align-items:flex-start;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,.04);}
 .staticon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.statval{font-size:22px;font-weight:800;color:var(--text);}
+.statval{font-size:22px;font-weight:800;color:var(--text);word-break:break-word;}
 .statlbl{font-size:12px;color:var(--text2);margin-bottom:2px;}
 .statsub{font-size:11px;color:var(--text3);margin-top:1px;}
 .trend{font-size:11px;font-weight:600;margin-top:4px;}
@@ -155,6 +155,7 @@ input,select,textarea{font-family:inherit;font-size:14px;outline:none;}
 .uinfo-cell{background:var(--gray-l);border-radius:8px;padding:6px 8px;}
 .uinfo-k{font-size:10px;color:var(--text3);}
 .uinfo-v{font-size:11px;font-weight:600;color:var(--text);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.uinfo-days{font-size:9px;color:var(--text3);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .uactions{display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
 .uact{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:7px;
   border-radius:10px;font-size:12px;font-weight:500;transition:.15s;}
@@ -286,6 +287,16 @@ input,select,textarea{font-family:inherit;font-size:14px;outline:none;}
 .confirm-icon{width:56px;height:56px;border-radius:50%;background:var(--red-l);display:flex;
   align-items:center;justify-content:center;margin:0 auto 12px;}
 .confirm-text{font-size:14px;color:var(--text2);margin-bottom:16px;}
+
+/* Print styles */
+@media print{
+  #header,#sidebar,#bottomnav,#syncStatus,.overlay,.notif-panel{display:none!important;}
+  #main{margin:0!important;padding:0!important;}
+  body{background:#fff!important;color:#000!important;}
+  .page{display:none!important;}
+  .page.active{display:block!important;}
+  .list-card,.card,.statcard{box-shadow:none!important;border:1px solid #ddd!important;}
+}
 </style>
 </head>
 <body>
@@ -566,9 +577,12 @@ function faNumComma(num){
   return faNum(s);
 }
 function faK(num){
-  // تبدیل به هزار با عدد فارسی، مثل ۱۵۰K
-  var n=Math.round((Number(num)||0)/1000);
-  return faNum(n)+'K';
+  // نمایش کامل مبلغ با جداکننده هزار و اعداد فارسی (بدون واحد)
+  return faNumComma(num);
+}
+function faToman(num){
+  // نمایش کامل مبلغ با جداکننده هزار، اعداد فارسی و واحد تومان
+  return faNumComma(num)+' تومان';
 }
 
 // ══════ MONEY INPUT (فارسی + جداکننده هزار) ══════
@@ -712,6 +726,30 @@ function mStart(jy,jm){var d=jToG(jy,jm,1);return(d.getDay()+1)%7;}
 function isoFromJ(jy,jm,jd){
   var g=jToG(jy,jm,jd);
   return g.getFullYear()+"-"+(g.getMonth()+1<10?"0":"")+(g.getMonth()+1)+"-"+(g.getDate()<10?"0":"")+g.getDate();
+}
+function daysUntilExpiry(endDate){
+  if(!endDate) return null;
+  var end=new Date(endDate);
+  if(isNaN(end)) return null;
+  var today=new Date();
+  end.setHours(0,0,0,0);
+  today.setHours(0,0,0,0);
+  var diffMs=end-today;
+  return Math.round(diffMs/(1000*60*60*24));
+}
+function daysUntilLabel(endDate){
+  var d=daysUntilExpiry(endDate);
+  if(d===null) return '-';
+  if(d>0) return faNum(d)+' روز مانده';
+  if(d===0) return 'امروز منقضی می‌شود';
+  return faNum(Math.abs(d))+' روز پیش منقضی شد';
+}
+function daysUntilColor(endDate){
+  var d=daysUntilExpiry(endDate);
+  if(d===null) return 'var(--text3)';
+  if(d<0) return 'var(--red)';
+  if(d<=7) return 'var(--amber)';
+  return 'var(--text3)';
 }
 
 // ══════ JALALI PICKER WIDGET ══════
@@ -937,7 +975,7 @@ function renderUsers(){
         +'<div class="umeta">'+faNum(u.mobile)+' • @'+u.username+'</div>'
         +'<div class="uinfo">'
         +'<div class="uinfo-cell"><div class="uinfo-k">سرویس</div><div class="uinfo-v">'+u.service+'</div></div>'
-        +'<div class="uinfo-cell"><div class="uinfo-k">انقضا</div><div class="uinfo-v">'+toJS(u.endDate)+'</div></div>'
+        +'<div class="uinfo-cell"><div class="uinfo-k">انقضا</div><div class="uinfo-v">'+toJS(u.endDate)+'</div><div class="uinfo-days" style="color:'+daysUntilColor(u.endDate)+'">'+daysUntilLabel(u.endDate)+'</div></div>'
         +'<div class="uinfo-cell"><div class="uinfo-k">مبلغ</div><div class="uinfo-v">'+faK(u.amount)+'</div></div>'
         +'</div></div></div>'
         +'<div class="uactions">'
@@ -1007,9 +1045,9 @@ function renderFinance(){
   document.getElementById('page-finance').innerHTML=
     '<div class="page-title" style="margin-bottom:14px">مدیریت مالی</div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">'
-    +'<div class="statcard" style="flex-direction:column;gap:6px"><div class="statlbl">کل درآمد</div><div class="statval" style="font-size:18px;color:var(--green)">'+faK(rev)+'</div></div>'
-    +'<div class="statcard" style="flex-direction:column;gap:6px"><div class="statlbl">کل هزینه</div><div class="statval" style="font-size:18px;color:var(--red)">'+faK(exp)+'</div></div>'
-    +'<div class="statcard" style="flex-direction:column;gap:6px"><div class="statlbl">سود خالص</div><div class="statval" style="font-size:18px;color:var(--brand)">'+faK(profit)+'</div></div>'
+    +'<div class="statcard" style="flex-direction:column;gap:6px"><div class="statlbl">کل درآمد</div><div class="statval" style="font-size:14px;color:var(--green)">'+faK(rev)+'</div></div>'
+    +'<div class="statcard" style="flex-direction:column;gap:6px"><div class="statlbl">کل هزینه</div><div class="statval" style="font-size:14px;color:var(--red)">'+faK(exp)+'</div></div>'
+    +'<div class="statcard" style="flex-direction:column;gap:6px"><div class="statlbl">سود خالص</div><div class="statval" style="font-size:14px;color:var(--brand)">'+faK(profit)+'</div></div>'
     +'</div>'
     +'<div class="list-card">'
     +'<div class="list-head"><span style="font-weight:700;font-size:14px;color:var(--text)">هزینه‌ها</span>'
@@ -1025,7 +1063,7 @@ function renderReports(){
     {l:'کاربران منقضی',v:faNum(byS('expired')),c:'var(--red)'},
     {l:'غیرفعال',v:faNum(byS('inactive')),c:'var(--amber)'},
     {l:'در حال انقضا',v:faNum(byS('expiring')),c:'#ea580c'},
-    {l:'کل درآمد',v:faK(rev)+' تومان',c:'#2563eb'},
+    {l:'کل درآمد',v:faToman(rev),c:'#2563eb'},
   ];
   var sumRows=rows.map(function(r){
     return '<div class="list-row">'
@@ -1048,10 +1086,44 @@ function renderReports(){
     +'<div class="list-card" style="margin-bottom:12px">'
     +'<div class="list-head"><span style="font-weight:700;font-size:14px;color:var(--text)">خلاصه سیستم</span>'
     +'<div style="display:flex;gap:6px">'
-    +'<button class="btn btn-sm" style="background:var(--gray-m);color:var(--text);font-size:11px">'+SVG.down+' Excel</button>'
-    +'<button class="btn btn-sm" style="background:var(--gray-m);color:var(--text);font-size:11px">'+SVG.print+' چاپ</button>'
+    +'<button class="btn btn-sm" style="background:var(--gray-m);color:var(--text);font-size:11px" onclick="exportUsersExcel()">'+SVG.down+' Excel</button>'
+    +'<button class="btn btn-sm" style="background:var(--gray-m);color:var(--text);font-size:11px" onclick="printReport()">'+SVG.print+' چاپ</button>'
     +'</div></div>'+sumRows+'</div>'
     +'<div class="list-card"><div class="list-head"><span style="font-weight:700;font-size:14px;color:var(--text)">لیست کامل کاربران</span></div>'+userRows+'</div>';
+}
+
+// ══════ EXPORT EXCEL (CSV) ══════
+function csvEscape(val){
+  var s = (val===null||val===undefined) ? '' : String(val);
+  if(s.indexOf(',')>-1 || s.indexOf('"')>-1 || s.indexOf('\n')>-1){
+    s = '"'+s.replace(/"/g,'""')+'"';
+  }
+  return s;
+}
+function exportUsersExcel(){
+  var headers=['نام','موبایل','نام کاربری','سرویس','حجم','سرعت','تاریخ شروع','تاریخ پایان','وضعیت','مبلغ (تومان)','توضیحات'];
+  var statusLabel={active:'فعال',expiring:'در حال انقضا',expired:'منقضی',inactive:'غیرفعال'};
+  var rows=users.map(function(u){
+    return [u.name,u.mobile,u.username,u.service,u.volume,u.speed,
+      toJ(u.startDate),toJ(u.endDate),statusLabel[u.status]||u.status,
+      u.amount,u.notes||''].map(csvEscape).join(',');
+  });
+  var csv = '\uFEFF' + headers.map(csvEscape).join(',') + '\r\n' + rows.join('\r\n');
+  var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  var dateStr = toJS(new Date()).replace(/\//g,'-');
+  a.href = url;
+  a.download = 'گزارش-کاربران-'+dateStr+'.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ══════ PRINT REPORT ══════
+function printReport(){
+  window.print();
 }
 
 function renderSettings(){
