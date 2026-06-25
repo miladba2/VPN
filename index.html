@@ -155,7 +155,8 @@ input,select,textarea{font-family:inherit;font-size:14px;outline:none;}
 .ucard-compact.open{border-color:var(--brand);}
 .ucard-row{display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;}
 .uname-compact{font-weight:600;font-size:13px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.udays-compact{font-size:13px;font-weight:700;white-space:nowrap;}
+.ubadge-wrap{flex-shrink:0;width:90px;display:flex;justify-content:center;}
+.udays-compact{font-size:13px;font-weight:700;white-space:nowrap;flex-shrink:0;min-width:64px;text-align:left;}
 .uchev{color:var(--text3);display:flex;align-items:center;flex-shrink:0;}
 .ucard-details{padding:0 14px 14px;border-top:1px solid var(--border);margin-top:2px;padding-top:10px;}
 .uinfo{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;}
@@ -565,6 +566,7 @@ async function loadFromSupabase(){
 var currentPage = "dashboard";
 var userSearch = "";
 var userFilter = "all";
+var userPlanFilter = "all"; // فیلتر بر اساس نوع پلن
 
 // ══════ PERSIAN DIGITS ══════
 var FA_DIGITS=['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
@@ -971,7 +973,23 @@ function renderDashboard(){
   updateAlertBadge();
 }
 
-var expandedUserId = null; // کدام کارت کاربر باز است
+// ══════ وضعیت خودکار کاربران ══════
+function autoUpdateStatuses(){
+  users = users.map(function(u){
+    if(u.status === 'inactive' || u.status === 'expired') return u;
+    var d = daysUntilExpiry(u.endDate);
+    if(d === null) return u;
+    if(d < 0){
+      return Object.assign({}, u, {status:'expired'});
+    } else if(d <= 7){
+      return Object.assign({}, u, {status:'expiring'});
+    } else {
+      return Object.assign({}, u, {status:'active'});
+    }
+  });
+}
+
+var expandedUserId = null;
 
 function toggleUserCard(id){
   expandedUserId = (expandedUserId === id) ? null : id;
@@ -979,22 +997,51 @@ function toggleUserCard(id){
 }
 
 function renderUsers(){
-  var filtered=users.filter(function(u){
-    var q=u.name.indexOf(userSearch)>=0||u.mobile.indexOf(userSearch)>=0||u.username.indexOf(userSearch)>=0;
-    return q&&(userFilter==='all'||u.status===userFilter);
+  autoUpdateStatuses();
+
+  // فیلتر جستجو + وضعیت + پلن
+  var filtered = users.filter(function(u){
+    var q = u.name.indexOf(userSearch)>=0
+         || u.mobile.indexOf(userSearch)>=0
+         || u.username.indexOf(userSearch)>=0
+         || u.service.indexOf(userSearch)>=0;
+    var statusOk = (userFilter==='all' || u.status===userFilter);
+    var planOk   = (userPlanFilter==='all' || u.service===userPlanFilter);
+    return q && statusOk && planOk;
   });
+
+  // مرتب‌سازی از کم‌ترین روز مانده به بیشترین
+  filtered.sort(function(a,b){
+    var da = daysUntilExpiry(a.endDate);
+    var db = daysUntilExpiry(b.endDate);
+    if(da===null && db===null) return 0;
+    if(da===null) return 1;
+    if(db===null) return -1;
+    return da - db;
+  });
+
   var fKeys=[{k:'all',l:'همه'},{k:'active',l:'فعال'},{k:'expiring',l:'در حال انقضا'},{k:'expired',l:'منقضی'},{k:'inactive',l:'غیرفعال'}];
-  var ftabs=fKeys.map(function(b){
+  var ftabs = fKeys.map(function(b){
     return '<button class="ftab'+(userFilter===b.k?' active':'')+'" onclick="setFilter(\''+b.k+'\')">'+b.l+'</button>';
   }).join('');
-  var cards=filtered.length===0
-    ?'<div style="text-align:center;padding:60px 0;color:var(--text3)"><svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="opacity:.3;display:block;margin:0 auto 8px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>کاربری یافت نشد</div>'
-    :filtered.map(function(u){
+
+  // لیست پلن‌های منحصربه‌فرد برای فیلتر پلن
+  var planNames = ['all'].concat(
+    plans.map(function(p){return p.name;}).filter(function(v,i,a){return a.indexOf(v)===i;})
+  );
+  var planTabs = planNames.map(function(p){
+    return '<button class="ftab'+(userPlanFilter===p?' active':'')+'" onclick="setPlanFilter(\''+p.replace(/'/g,"\\'")+'\')">'
+      +(p==='all'?'همه پلن‌ها':p)+'</button>';
+  }).join('');
+
+  var cards = filtered.length===0
+    ? '<div style="text-align:center;padding:60px 0;color:var(--text3)"><svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="opacity:.3;display:block;margin:0 auto 8px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>کاربری یافت نشد</div>'
+    : filtered.map(function(u){
       var isOpen = (expandedUserId === u.id);
       var html = '<div class="ucard-compact'+(isOpen?' open':'')+'">'
         +'<div class="ucard-row" onclick="toggleUserCard('+u.id+')">'
         +'<div class="uname-compact">'+u.name+'</div>'
-        +badge(u.status)
+        +'<div class="ubadge-wrap">'+badge(u.status)+'</div>'
         +'<div class="udays-compact" style="color:'+daysUntilColor(u.endDate)+'">'+daysUntilLabelShort(u.endDate)+'</div>'
         +'<div class="uchev">'+(isOpen?SVG.chevUp:SVG.chevDown)+'</div>'
         +'</div>';
@@ -1003,7 +1050,8 @@ function renderUsers(){
           +'<div class="umeta">'+faNum(u.mobile)+' • @'+u.username+'</div>'
           +'<div class="uinfo">'
           +'<div class="uinfo-cell"><div class="uinfo-k">نوع</div><div class="uinfo-v">'+u.service+'</div></div>'
-          +'<div class="uinfo-cell"><div class="uinfo-k">انقضا</div><div class="uinfo-v">'+toJS(u.endDate)+'</div></div>'
+          +'<div class="uinfo-cell"><div class="uinfo-k">انقضا</div><div class="uinfo-v">'+toJS(u.endDate)+'</div>'
+          +'<div class="uinfo-days" style="color:'+daysUntilColor(u.endDate)+'">'+daysUntilLabel(u.endDate)+'</div></div>'
           +'</div>'
           +'<div class="uactions">'
           +'<button class="uact uact-edit" onclick="event.stopPropagation();editUser('+u.id+')">'+SVG.edit+' ویرایش</button>'
@@ -1022,13 +1070,15 @@ function renderUsers(){
     +'<button class="btn btn-blue btn-sm" onclick="addUser()">'+SVG.plus+' افزودن</button>'
     +'</div>'
     +'<div class="searchbox"><span class="searchicon">'+SVG.search+'</span>'
-    +'<input type="text" placeholder="جستجو..." value="'+userSearch+'" oninput="setSearch(this.value)"/></div>'
-    +'<div class="filters">'+ftabs+'</div>'
+    +'<input type="text" placeholder="جستجو بر اساس نام، موبایل، کاربری یا سرویس..." value="'+userSearch+'" oninput="setSearch(this.value)"/></div>'
+    +'<div class="filters" style="margin-bottom:6px">'+ftabs+'</div>'
+    +'<div class="filters">'+planTabs+'</div>'
     +cards;
 }
 
 function setSearch(v){userSearch=v;renderUsers();}
 function setFilter(v){userFilter=v;renderUsers();}
+function setPlanFilter(v){userPlanFilter=v;renderUsers();}
 
 function renderPlans(){
   var protoClass={'V2Ray':'proto-v2ray','Xray':'proto-xray','Trojan':'proto-trojan','Shadowsocks':'proto-shadowsocks','WireGuard':'proto-wireguard','OpenVPN':'proto-openvpn'};
